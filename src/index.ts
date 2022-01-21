@@ -1,3 +1,7 @@
+import dotenv from "dotenv";
+dotenv.config(); // load env vars from .env
+import * as fs from 'fs';
+
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
 import { Contract, providers, Wallet } from "ethers";
 import { BUNDLE_EXECUTOR_ABI } from "./abi";
@@ -9,10 +13,12 @@ import { get } from "https"
 const ETHEREUM_RPC_URL = process.env.ETHEREUM_RPC_URL || "http://127.0.0.1:8545"
 const PRIVATE_KEY = process.env.PRIVATE_KEY || ""
 const BUNDLE_EXECUTOR_ADDRESS = process.env.BUNDLE_EXECUTOR_ADDRESS || ""
-const FLASHBOTS_KEY_ID = process.env.FLASHBOTS_KEY_ID || "";
-const FLASHBOTS_SECRET = process.env.FLASHBOTS_SECRET || "";
+const FLASHBOTS_AUTH_KEY = process.env.FLASHBOTS_AUTH_KEY || "";
+const FLASHBOTS_EP = process.env.FLASHBOTS_EP || "";
 
 const MINER_REWARD_PERCENTAGE = parseInt(process.env.MINER_REWARD_PERCENTAGE || "80")
+
+const logFileName='./log.txt';
 
 if (PRIVATE_KEY === "") {
   console.warn("Must provide PRIVATE_KEY environment variable")
@@ -22,8 +28,8 @@ if (BUNDLE_EXECUTOR_ADDRESS === "") {
   console.warn("Must provide BUNDLE_EXECUTOR_ADDRESS environment variable. Please see README.md")
   process.exit(1)
 }
-if (FLASHBOTS_KEY_ID === "" || FLASHBOTS_SECRET === "") {
-  console.warn("Must provide FLASHBOTS_KEY_ID and FLASHBOTS_SECRET environment variable. Please see https://hackmd.io/@flashbots/rk-qzgzCD")
+if (FLASHBOTS_AUTH_KEY === "" ) {
+  console.warn("Must provide FLASHBOTS_AUTH_KEY environment variable.")
   process.exit(1)
 }
 
@@ -39,10 +45,17 @@ function healthcheck() {
 }
 
 async function main() {
+
+    const timeStr = new Date().toLocaleString(undefined, {year: 'numeric', month: '2-digit', day: '2-digit', weekday:"long", hour: '2-digit', hour12: false, minute:'2-digit', second:'2-digit'})
+//    console.log(timeStr)
+fs.writeFile(logFileName, "\n"+timeStr+' Start!',  { flag: 'a+' } , function (err) {
+  if (err) return console.log(err);
+  console.log(timeStr);
+});
   const markets = await UniswappyV2EthPair.getUniswapMarketsByToken(provider, FACTORY_ADDRESSES);
   const arbitrage = new Arbitrage(
     new Wallet(PRIVATE_KEY),
-    await FlashbotsBundleProvider.create(provider, FLASHBOTS_KEY_ID, FLASHBOTS_SECRET),
+    await FlashbotsBundleProvider.create(provider, FLASHBOTS_AUTH_KEY, FLASHBOTS_EP),
     new Contract(BUNDLE_EXECUTOR_ADDRESS, BUNDLE_EXECUTOR_ABI, provider) )
 
   provider.on('block', async (blockNumber) => {

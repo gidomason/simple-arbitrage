@@ -5,6 +5,10 @@ import { WETH_ADDRESS } from "./addresses";
 import { EthMarket } from "./EthMarket";
 import { ETHER, bigNumberToDecimal } from "./utils";
 
+import * as fs from 'fs';
+
+const logFileName='./log.txt';
+
 export interface CrossedMarketDetails {
   profit: BigNumber,
   volume: BigNumber,
@@ -94,14 +98,20 @@ export class Arbitrage {
   static printCrossedMarket(crossedMarket: CrossedMarketDetails): void {
     const buyTokens = crossedMarket.buyFromMarket.tokens
     const sellTokens = crossedMarket.sellToMarket.tokens
-    console.log(
-      `Profit: ${bigNumberToDecimal(crossedMarket.profit)} Volume: ${bigNumberToDecimal(crossedMarket.volume)}\n` +
+    const txtMessage= `Profit: ${bigNumberToDecimal(crossedMarket.profit)} Volume: ${bigNumberToDecimal(crossedMarket.volume)}\n` +
       `${crossedMarket.buyFromMarket.protocol} (${crossedMarket.buyFromMarket.marketAddress})\n` +
       `  ${buyTokens[0]} => ${buyTokens[1]}\n` +
       `${crossedMarket.sellToMarket.protocol} (${crossedMarket.sellToMarket.marketAddress})\n` +
       `  ${sellTokens[0]} => ${sellTokens[1]}\n` +
       `\n`
-    )
+
+    console.log(txtMessage)
+    const timeStr = new Date().toLocaleString(undefined, {year: 'numeric', month: '2-digit', day: '2-digit', weekday:"long", hour: '2-digit', hour12: false, minute:'2-digit', second:'2-digit'})
+    fs.writeFile(logFileName, "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
+	if (err) return console.log(err);
+	console.log('Hello World > log.file');
+    })
+
   }
 
 

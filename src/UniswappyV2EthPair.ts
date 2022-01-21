@@ -46,6 +46,7 @@ export class UniswappyV2EthPair extends EthMarket {
   }
 
   static async getUniswappyMarkets(provider: providers.JsonRpcProvider, factoryAddress: string): Promise<Array<UniswappyV2EthPair>> {
+    console.log(factoryAddress)
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
 
     const marketPairs = new Array<UniswappyV2EthPair>()
@@ -54,18 +55,22 @@ export class UniswappyV2EthPair extends EthMarket {
       for (let i = 0; i < pairs.length; i++) {
         const pair = pairs[i];
         const marketAddress = pair[2];
+//	console.log(marketAddress)
         let tokenAddress: string;
 
+//	console.log(pair[0],pair[1])
         if (pair[0] === WETH_ADDRESS) {
           tokenAddress = pair[1]
         } else if (pair[1] === WETH_ADDRESS) {
           tokenAddress = pair[0]
         } else {
+//		console.log(pair[0],pair[1])
           continue;
         }
         if (!blacklistTokens.includes(tokenAddress)) {
           const uniswappyV2EthPair = new UniswappyV2EthPair(marketAddress, [pair[0], pair[1]], "");
           marketPairs.push(uniswappyV2EthPair);
+//	  console.log(pair[0],pair[1])
         }
       }
       if (pairs.length < UNISWAP_BATCH_SIZE) {
@@ -86,12 +91,23 @@ export class UniswappyV2EthPair extends EthMarket {
       .groupBy(pair => pair.tokens[0] === WETH_ADDRESS ? pair.tokens[1] : pair.tokens[0])
       .value()
 
+/*
     const allMarketPairs = _.chain(
       _.pickBy(marketsByTokenAll, a => a.length > 1) // weird TS bug, chain'd pickBy is Partial<>
     )
       .values()
       .flatten()
       .value()
+*/
+//    console.log(marketsByTokenAll)
+//    const test=_.pickBy(marketsByTokenAll, a => a.length === 1)
+    const test=_.pickBy(marketsByTokenAll, a => a.length > 1)
+    console.log(test)
+    const allMarketPairs = _.chain(test)
+      .values()
+      .flatten()
+      .value()
+//    console.log(allMarketPairs)
 
     await UniswappyV2EthPair.updateReserves(provider, allMarketPairs);
 
@@ -116,6 +132,7 @@ export class UniswappyV2EthPair extends EthMarket {
       const reserve = reserves[i]
       marketPair.setReservesViaOrderedBalances([reserve[0], reserve[1]])
     }
+//    console.log("UpdatE SUCCESS")
   }
 
   getBalance(tokenAddress: string): BigNumber {
