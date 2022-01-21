@@ -59,7 +59,12 @@ fs.writeFile(logFileName, "\n"+timeStr+' Start!',  { flag: 'a+' } , function (er
     new Contract(BUNDLE_EXECUTOR_ADDRESS, BUNDLE_EXECUTOR_ABI, provider) )
 
   provider.on('block', async (blockNumber) => {
-    await UniswappyV2EthPair.updateReserves(provider, markets.allMarketPairs);
+    try{
+	await UniswappyV2EthPair.updateReserves(provider, markets.allMarketPairs);
+    } catch (e){
+	console.log(e)
+	return
+    }
     const bestCrossedMarkets = await arbitrage.evaluateMarkets(markets.marketsByToken);
     if (bestCrossedMarkets.length === 0) {
       console.log("No crossed markets")

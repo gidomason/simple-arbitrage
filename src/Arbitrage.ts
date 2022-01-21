@@ -8,6 +8,8 @@ import { ETHER, bigNumberToDecimal } from "./utils";
 import * as fs from 'fs';
 
 const logFileName='./log.txt';
+const logFileNameBig='./logBig.txt';
+const sizeForLog=0.1;
 
 export interface CrossedMarketDetails {
   profit: BigNumber,
@@ -111,6 +113,12 @@ export class Arbitrage {
 	if (err) return console.log(err);
 	console.log('Hello World > log.file');
     })
+    if (bigNumberToDecimal(crossedMarket.profit)>sizeForLog){
+	fs.writeFile(logFileNameBig, "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
+	    if (err) return console.log(err);
+	    console.log('Hello World > log.file');
+	})
+    }
 
   }
 
