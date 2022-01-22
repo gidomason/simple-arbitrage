@@ -55,7 +55,7 @@ fs.writeFile(logFileName, "\n"+timeStr+' Start!',  { flag: 'a+' } , function (er
   const markets = await UniswappyV2EthPair.getUniswapMarketsByToken(provider, FACTORY_ADDRESSES);
   const arbitrage = new Arbitrage(
     new Wallet(PRIVATE_KEY),
-    await FlashbotsBundleProvider.create(provider, FLASHBOTS_AUTH_KEY, FLASHBOTS_EP),
+    await FlashbotsBundleProvider.create(provider, new Wallet(FLASHBOTS_AUTH_KEY), FLASHBOTS_EP),
     new Contract(BUNDLE_EXECUTOR_ADDRESS, BUNDLE_EXECUTOR_ABI, provider) )
 
   provider.on('block', async (blockNumber) => {

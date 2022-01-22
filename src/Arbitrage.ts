@@ -11,6 +11,12 @@ const logFileName='./log.txt';
 const logFileNameBig='./logBig.txt';
 const sizeForLog=0.1;
 
+const GWEI = BigNumber.from(10).pow(9)
+const PRIORITY_FEE = GWEI.mul(3)
+//const LEGACY_GAS_PRICE = GWEI.mul(12)
+const BLOCKS_IN_THE_FUTURE = 1
+
+
 export interface CrossedMarketDetails {
   profit: BigNumber,
   volume: BigNumber,
@@ -23,6 +29,8 @@ export type MarketsByToken = { [tokenAddress: string]: Array<EthMarket> }
 
 // TODO: implement binary search (assuming linear/exponential global maximum profitability)
 const TEST_VOLUMES = [
+//  ETHER.mul(1),
+//  ETHER.mul(2),
   ETHER.mul(5),
   ETHER.mul(10),
   ETHER.mul(15),
@@ -44,7 +52,7 @@ const TEST_VOLUMES = [
   ETHER.mul(450),
   ETHER.mul(500),
   ETHER.mul(750),
-  ETHER.mul(1000)
+  ETHER.mul(1000),
 ]
 
 const flashloanFeePercentage = 9 // (0.09%) or 9/10000
@@ -111,12 +119,12 @@ export class Arbitrage {
     const timeStr = new Date().toLocaleString(undefined, {year: 'numeric', month: '2-digit', day: '2-digit', weekday:"long", hour: '2-digit', hour12: false, minute:'2-digit', second:'2-digit'})
     fs.writeFile(logFileName, "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
 	if (err) return console.log(err);
-	console.log('Hello World > log.file');
+	console.log('Catch normal >> log.file');
     })
     if (bigNumberToDecimal(crossedMarket.profit)>sizeForLog){
 	fs.writeFile(logFileNameBig, "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
 	    if (err) return console.log(err);
-	    console.log('Hello World > log.file');
+	    console.log('Catch big >> log.file');
 	})
     }
 
@@ -157,6 +165,75 @@ export class Arbitrage {
   // TODO: take more than 1
   async takeCrossedMarkets(bestCrossedMarkets: CrossedMarketDetails[], blockNumber: number, minerRewardPercentage: number): Promise<void> {
     for (const bestCrossedMarket of bestCrossedMarkets) {
+
+//      console.log(this.bundleExecutorContract.provider)
+      const block = await this.bundleExecutorContract.provider.getBlock(blockNumber)
+      console.log(block)
+//      console.log(block.baseFee)
+	let feeData = await this.bundleExecutorContract.provider.getFeeData();
+	console.log("Fee Data:", feeData);
+/*
+
+  hash: '0xa781f40d605d27b165caa3ad46c76a1036f168c87e866a9c33e6213d98756487',
+  parentHash: '0x69959f9f63607150a7956b89d1613021309432005c74b6f130352b442b329091',
+  number: 14055228,
+  timestamp: 1642851859,
+  nonce: '0xaba12aeb8493d24d',
+  difficulty: null,
+  gasLimit: BigNumber { _hex: '0x01ca35b5', _isBigNumber: true },
+  gasUsed: BigNumber { _hex: '0x01ca2dc7', _isBigNumber: true },
+  miner: '0xab3B229eB4BcFF881275E7EA2F0FD24eeaC8C83a',
+  extraData: '0x706f6f6c696e2e636f6d1f45675f3ff5a09649',
+  transactions: [
+
+      if (block.baseFeePerGas == null) {
+	console.warn('This chain is not EIP-1559 enabled')
+      }else{
+	console.warn('This chain is EIP-1559 enabled. Need fix!')
+      }
+
+  const legacyTransaction = {
+    to: wallet.address,
+    gasPrice: LEGACY_GAS_PRICE,
+    gasLimit: 21000,
+    data: '0x',
+    nonce: await provider.getTransactionCount(wallet.address)
+  }
+
+    const block = await provider.getBlock(blockNumber)
+
+    let eip1559Transaction: TransactionRequest
+    if (block.baseFeePerGas == null) {
+      console.warn('This chain is not EIP-1559 enabled, defaulting to two legacy transactions for demo')
+      eip1559Transaction = { ...legacyTransaction }
+      // We set a nonce in legacyTransaction above to limit validity to a single landed bundle. Delete that nonce for tx#2, and allow bundle provider to calculate it
+      delete eip1559Transaction.nonce
+    } else {
+      const maxBaseFeeInFutureBlock = FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(block.baseFeePerGas, BLOCKS_IN_THE_FUTURE)
+      eip1559Transaction = {
+        to: wallet.address,
+        type: 2,
+        maxFeePerGas: PRIORITY_FEE.add(maxBaseFeeInFutureBlock),
+        maxPriorityFeePerGas: PRIORITY_FEE,
+        gasLimit: 21000,
+        data: '0x',
+        chainId: CHAIN_ID
+      }
+    }
+
+    const signedTransactions = await flashbotsProvider.signBundle([
+      {
+        signer: wallet,
+        transaction: legacyTransaction
+      },
+      {
+        signer: wallet,
+        transaction: eip1559Transaction
+      },
+    ])
+
+*/
+
       const buyCalls = await bestCrossedMarket.buyFromMarket.sellTokensToNextMarket(WETH_ADDRESS, bestCrossedMarket.volume, bestCrossedMarket.sellToMarket);
       const inter = bestCrossedMarket.buyFromMarket.getTokensOut(WETH_ADDRESS, bestCrossedMarket.tokenAddress, bestCrossedMarket.volume)
       const sellCallData = await bestCrossedMarket.sellToMarket.sellTokens(bestCrossedMarket.tokenAddress, inter, this.bundleExecutorContract.address);
@@ -181,8 +258,11 @@ export class Arbitrage {
           if (profitMinusFeeMinusMinerReward.gt(0)){
   
             const transaction = await this.bundleExecutorContract.populateTransaction.flashloan(WETH_ADDRESS, bestCrossedMarket.volume, params, {
-              gasPrice: BigNumber.from(0),
+//              gasPrice: BigNumber.from(0),
+              gasPrice: GWEI.mul(200).add(PRIORITY_FEE),
               gasLimit: BigNumber.from(1400000),
+	      type: 2,
+	      chainId: 1,
             });
       
             try {
@@ -200,6 +280,7 @@ export class Arbitrage {
               console.warn(`Estimate gas failure for ${JSON.stringify(bestCrossedMarket)}`)
               continue
             }
+/*
             const bundlePromises = _.map([blockNumber + 1, blockNumber + 2], targetBlockNumber =>
               this.flashbotsProvider.sendBundle(
                 [
@@ -212,7 +293,7 @@ export class Arbitrage {
               )
             )
             await Promise.all(bundlePromises)
-  
+*/
           } else {
             console.log("Transaction would be unprofitable after the flashloan fee and miner reward.")
             continue
