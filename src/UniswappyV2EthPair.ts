@@ -8,7 +8,7 @@ import { MarketsByToken } from "./Arbitrage";
 import { readFileSync, writeFile } from 'fs';
 
 // batch count limit helpful for testing, loading entire set of uniswap markets takes a long time to load
-const BATCH_COUNT_LIMIT = 20; //0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73  PancakeSwap: Factory v2  lenght 703598  !!
+const BATCH_COUNT_LIMIT = 150; //0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73  PancakeSwap: Factory v2  lenght 703598  !!
 const UNISWAP_BATCH_SIZE = 1000
 
 // Not necessary, slightly speeds up loading initialization when we know tokens are bad
@@ -25,6 +25,13 @@ const blacklistTokens = [
   '0xF7844CB890F4C339c497aeAb599aBDc3c874B67A', //nftart?
   '0xA57ac35CE91Ee92CaEfAA8dc04140C8e232c2E50', //pitbul fee 4%
   '0x3aD9594151886Ce8538C1ff615EFa2385a8C3A88', // safemasrs , fee 4%
+  '0x6158b3435DC3bc54a19A32Da2A2ed22aeC3bEF3e', //fee
+  '0xEF2ec90e0b8D4CdFdB090989EA1Bc663F0D680BF', //fee
+  '0x6D949f9297A522c0f97C232CC209a67Bd7CfA471', //fee
+  '0x066fc8DD5955534A01a9f892314c9B01b59A9C11', //fee
+  '0x579F11C75Eb4e47F5290122e87CA411644aDCD97', //fee
+  '0x8076C74C5e3F5852037F31Ff0093Eeb8c8ADd8D3', //old safemoon/BUSD
+  '', //fee
 ]
 
 interface GroupedMarkets {
@@ -66,8 +73,18 @@ export class UniswappyV2EthPair extends EthMarket {
 	const rawdata = readFileSync(PAIRSFILENAME,'utf8');
 	const rawPairs = JSON.parse(rawdata);
 	for (const pair of rawPairs){
-	    const uniswappyV2EthPair = new UniswappyV2EthPair(pair['market'], [pair['pair0'], pair['pair1']], pair['param']);
-	    marketPairs.push(uniswappyV2EthPair);
+	    let tokenAddress: string;
+	    if (pair['pair0'] === WETH_ADDRESS) {
+		tokenAddress = pair[1]
+	    } else if (pair['pair1'] === WETH_ADDRESS) {
+		tokenAddress = pair[0]
+	    } else {
+		continue;
+	    }
+	    if (!blacklistTokens.includes(tokenAddress)) {
+		const uniswappyV2EthPair = new UniswappyV2EthPair(pair['market'], [pair['pair0'], pair['pair1']], pair['param']);
+		marketPairs.push(uniswappyV2EthPair);
+	    }
 	}
 	return marketPairs
     }catch{console.log('Something wrong with reading  %s file. Rescaning .....',PAIRSFILENAME)}
@@ -77,13 +94,15 @@ export class UniswappyV2EthPair extends EthMarket {
 
     for (let i = 0; i < BATCH_COUNT_LIMIT * UNISWAP_BATCH_SIZE; i += UNISWAP_BATCH_SIZE) {
 	console.log('Batch : %d, factory : %s',i,factoryAddress)
+	await new Promise(f => setTimeout(f, 1000)); //pause 1 sec
       const pairs: Array<Array<string>> = (await uniswapQuery.functions.getPairsByIndexRange(factoryAddress, i, i + UNISWAP_BATCH_SIZE))[0];
       for (let i = 0; i < pairs.length; i++) {
         const pair = pairs[i];
         const marketAddress = pair[2];
+	const pairone={'market':marketAddress,'pair0':pair[0],'pair1':pair[1],'param':""}
+	rawPair.push(pairone) //for cache .json
 //	console.log(marketAddress,  pairs.length-i)
         let tokenAddress: string;
-
 //	console.log(pair[0],pair[1])
         if (pair[0] === WETH_ADDRESS) {
           tokenAddress = pair[1]
@@ -95,9 +114,9 @@ export class UniswappyV2EthPair extends EthMarket {
         }
         if (!blacklistTokens.includes(tokenAddress)) {
           const uniswappyV2EthPair = new UniswappyV2EthPair(marketAddress, [pair[0], pair[1]], "");
-          marketPairs.push(uniswappyV2EthPair);
+	    marketPairs.push(uniswappyV2EthPair);
 	    const pairone={'market':marketAddress,'pair0':pair[0],'pair1':pair[1],'param':""}
-	    rawPair.push(pairone)
+//	    rawPair.push(pairone)
 //	  console.log(pair[0],pair[1])
         }
       }
@@ -137,14 +156,14 @@ export class UniswappyV2EthPair extends EthMarket {
 //    console.log(marketsByTokenAll)
 //    const test=_.pickBy(marketsByTokenAll, a => a.length === 1)
     const test=_.pickBy(marketsByTokenAll, a => a.length > 1)
-    console.log(test)
+//    console.log(test)
     const allMarketPairs = _.chain(test)
       .values()
       .flatten()
       .value()
 //    console.log(allMarketPairs)
 
-    await UniswappyV2EthPair.updateReserves(provider, allMarketPairs);
+    await UniswappyV2EthPair.updateReserves2(provider, allMarketPairs);
 
     const marketsByToken = _.chain(allMarketPairs)
       .filter(pair => (pair.getBalance(WETH_ADDRESS).gt(ETHER.mul(10))))
@@ -161,11 +180,12 @@ export class UniswappyV2EthPair extends EthMarket {
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
     const pairAddresses = allMarketPairs.map(marketPair => marketPair.marketAddress);
     console.log("Updating markets, count:", pairAddresses.length)
-
     const PAIRS_COUNT_LIMIT=3000
     let reserves: Array<Array<BigNumber>>=[[]]
     for (let b = 0; b < pairAddresses.length; b += PAIRS_COUNT_LIMIT){
 	console.log('Batch pairs: ',b)
+//	const estimate=await uniswapQuery.estimateGas.getReservesByPairs(pairAddresses.slice( b, (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length:b+PAIRS_COUNT_LIMIT) ))
+//	console.log('Estimate gas : ',estimate)
 	const reservesB: Array<Array<BigNumber>> = (await uniswapQuery.functions.getReservesByPairs(pairAddresses.slice( b, (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length:b+PAIRS_COUNT_LIMIT) )))[0];
 	for (let i = 0; i < (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length-b:PAIRS_COUNT_LIMIT) ; i++) {
 	    const marketPair = allMarketPairs[i+b];
@@ -179,6 +199,8 @@ export class UniswappyV2EthPair extends EthMarket {
   }
 
   static async updateReserves(provider: providers.JsonRpcProvider, allMarketPairs: Array<UniswappyV2EthPair>): Promise<void> {
+    console.log('OLD UPDATES!')
+    return
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
     const pairAddresses = allMarketPairs.map(marketPair => marketPair.marketAddress);
     console.log("Updating markets, count:", pairAddresses.length)
