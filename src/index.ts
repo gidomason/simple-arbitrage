@@ -15,6 +15,7 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY || ""
 const BUNDLE_EXECUTOR_ADDRESS = process.env.BUNDLE_EXECUTOR_ADDRESS || ""
 const FLASHBOTS_AUTH_KEY = process.env.FLASHBOTS_AUTH_KEY || "";
 const FLASHBOTS_EP = process.env.FLASHBOTS_EP || "";
+//const NETWORK = process.env.NETWORK || "";
 
 const MINER_REWARD_PERCENTAGE = parseInt(process.env.MINER_REWARD_PERCENTAGE || "80")
 
@@ -53,14 +54,21 @@ fs.writeFile(logFileName, "\n"+timeStr+' Start!',  { flag: 'a+' } , function (er
   console.log(timeStr);
 });
   const markets = await UniswappyV2EthPair.getUniswapMarketsByToken(provider, FACTORY_ADDRESSES);
+ console.log(markets)
   const arbitrage = new Arbitrage(
     new Wallet(PRIVATE_KEY),
-    await FlashbotsBundleProvider.create(provider, new Wallet(FLASHBOTS_AUTH_KEY), FLASHBOTS_EP),
+//    await FlashbotsBundleProvider.create(provider, new Wallet(FLASHBOTS_AUTH_KEY), FLASHBOTS_EP),
+    await FlashbotsBundleProvider.create(
+  new providers.StaticJsonRpcProvider('https://goerli.infura.io/v3/72e17810a98144ed8fd9858977f4e480'),
+  new Wallet(FLASHBOTS_AUTH_KEY),
+  'https://relay-goerli.flashbots.net/',
+  'goerli'),
     new Contract(BUNDLE_EXECUTOR_ADDRESS, BUNDLE_EXECUTOR_ABI, provider) )
 
   provider.on('block', async (blockNumber) => {
+    if ((blockNumber % 10 !== 0) && 1==1) return
     try{
-	await UniswappyV2EthPair.updateReserves(provider, markets.allMarketPairs);
+	await UniswappyV2EthPair.updateReserves2(provider, markets.allMarketPairs);
     } catch (e){
 	console.log(e)
 	return

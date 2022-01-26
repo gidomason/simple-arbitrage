@@ -7,9 +7,10 @@ import { ETHER, bigNumberToDecimal } from "./utils";
 
 import * as fs from 'fs';
 
-const logFileName='./log.txt';
-const logFileNameBig='./logBig.txt';
-const sizeForLog=0.1;
+const logFileName='./log';
+const logFileNameBig='./logBig';
+var sizeForLog=0.1;
+var networkName='eth';
 
 const GWEI = BigNumber.from(10).pow(9)
 const PRIORITY_FEE = GWEI.mul(3)
@@ -29,7 +30,7 @@ export type MarketsByToken = { [tokenAddress: string]: Array<EthMarket> }
 
 // TODO: implement binary search (assuming linear/exponential global maximum profitability)
 const TEST_VOLUMES = [
-//  ETHER.mul(1),
+//  ETHER.mul(1), //for tests
 //  ETHER.mul(2),
   ETHER.mul(5),
   ETHER.mul(10),
@@ -98,12 +99,25 @@ export class Arbitrage {
   private flashbotsProvider: FlashbotsBundleProvider;
   private bundleExecutorContract: Contract;
   private executorWallet: Wallet;
+//  private network: string;
 
   constructor(executorWallet: Wallet, flashbotsProvider: FlashbotsBundleProvider, bundleExecutorContract: Contract) {
     this.executorWallet = executorWallet;
     this.flashbotsProvider = flashbotsProvider;
     this.bundleExecutorContract = bundleExecutorContract;
+    networkName = 'eth';
+//    console.log(flashbotsProvider);
+//    console.log(bundleExecutorContract.provider);
+//    console.log(bundleExecutorContract.provider);
+//    const { chainId } = bundleExecutorContract.provider.getNetwork();
+//    bundleExecutorContract.provider.getNetwork().then(console.log);
+    
+    bundleExecutorContract.provider.getNetwork().then((val) => {console.log(val);networkName=val.name });
+    console.log(networkName);
+//{ name: 'bnb', chainId: 56, ensAddress: null, _defaultProvider: null }
+//    console.log("Network chain id : ",chainId);
   }
+
 
   static printCrossedMarket(crossedMarket: CrossedMarketDetails): void {
     const buyTokens = crossedMarket.buyFromMarket.tokens
@@ -116,13 +130,16 @@ export class Arbitrage {
       `\n`
 
     console.log(txtMessage)
+    
     const timeStr = new Date().toLocaleString(undefined, {year: 'numeric', month: '2-digit', day: '2-digit', weekday:"long", hour: '2-digit', hour12: false, minute:'2-digit', second:'2-digit'})
-    fs.writeFile(logFileName, "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
+    fs.writeFile(logFileName+networkName+'.txt', "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
 	if (err) return console.log(err);
 	console.log('Catch normal >> log.file');
     })
+    console.log(networkName);
+    if (networkName === 'bnb') sizeForLog=10;
     if (bigNumberToDecimal(crossedMarket.profit)>sizeForLog){
-	fs.writeFile(logFileNameBig, "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
+	fs.writeFile(logFileNameBig+networkName+'.txt', "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
 	    if (err) return console.log(err);
 	    console.log('Catch big >> log.file');
 	})
@@ -168,10 +185,12 @@ export class Arbitrage {
 
 //      console.log(this.bundleExecutorContract.provider)
       const block = await this.bundleExecutorContract.provider.getBlock(blockNumber)
-      console.log(block)
+//      console.log(block)
 //      console.log(block.baseFee)
 	let feeData = await this.bundleExecutorContract.provider.getFeeData();
 	console.log("Fee Data:", feeData);
+      const maxBaseFeeInFutureBlock = FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(BigNumber.from(block.baseFeePerGas), BLOCKS_IN_THE_FUTURE)
+      console.log('maxBaseFeeInFutureBlock :',maxBaseFeeInFutureBlock)
 /*
 
   hash: '0xa781f40d605d27b165caa3ad46c76a1036f168c87e866a9c33e6213d98756487',
@@ -203,6 +222,7 @@ export class Arbitrage {
     const block = await provider.getBlock(blockNumber)
 
     let eip1559Transaction: TransactionRequest
+
     if (block.baseFeePerGas == null) {
       console.warn('This chain is not EIP-1559 enabled, defaulting to two legacy transactions for demo')
       eip1559Transaction = { ...legacyTransaction }
@@ -259,10 +279,12 @@ export class Arbitrage {
   
             const transaction = await this.bundleExecutorContract.populateTransaction.flashloan(WETH_ADDRESS, bestCrossedMarket.volume, params, {
 //              gasPrice: BigNumber.from(0),
-              gasPrice: GWEI.mul(200).add(PRIORITY_FEE),
+//              gasPrice: GWEI.mul(200).add(PRIORITY_FEE),
+		maxFeePerGas: PRIORITY_FEE.add(maxBaseFeeInFutureBlock),
+		maxPriorityFeePerGas: PRIORITY_FEE,
               gasLimit: BigNumber.from(1400000),
 	      type: 2,
-	      chainId: 1,
+//	      chainId: 1,
             });
       
             try {
@@ -278,8 +300,11 @@ export class Arbitrage {
               transaction.gasLimit = estimateGas.mul(2)
             } catch (e) {
               console.warn(`Estimate gas failure for ${JSON.stringify(bestCrossedMarket)}`)
+//	      console.warn(e)
+//	      process.exit(0) //debug
               continue
             }
+//	    process.exit(0) // debug
 /*
             const bundlePromises = _.map([blockNumber + 1, blockNumber + 2], targetBlockNumber =>
               this.flashbotsProvider.sendBundle(

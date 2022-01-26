@@ -4,4 +4,4 @@
 /tsconfig.tsbuildinfo
 /hardhat
 /.vscode
-.env
+.env*
