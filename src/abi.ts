@@ -454,7 +454,8 @@ export const UNISWAP_PAIR_ABI = [{
   "payable": false,
   "stateMutability": "nonpayable",
   "type": "function"
-}, {
+}
+, {
   "constant": true,
   "inputs": [],
   "name": "symbol",

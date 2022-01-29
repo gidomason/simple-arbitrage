@@ -1,5 +1,5 @@
 import * as _ from "lodash";
-import { BigNumber, Contract, providers } from "ethers";
+import { BigNumber, Contract, Wallet, providers } from "ethers";
 import { UNISWAP_PAIR_ABI, UNISWAP_QUERY_ABI } from "./abi";
 import { UNISWAP_LOOKUP_CONTRACT_ADDRESS, WETH_ADDRESS } from "./addresses";
 import { CallDetails, EthMarket, MultipleCallData, TokenBalances } from "./EthMarket";
@@ -8,12 +8,14 @@ import { MarketsByToken } from "./Arbitrage";
 import { readFileSync, writeFile } from 'fs';
 
 // batch count limit helpful for testing, loading entire set of uniswap markets takes a long time to load
-const BATCH_COUNT_LIMIT = 150; //0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73  PancakeSwap: Factory v2  lenght 703598  !!
+const BATCH_COUNT_LIMIT = 1000; //0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73  PancakeSwap: Factory v2  lenght 703598  !!
 const UNISWAP_BATCH_SIZE = 1000
+const PAIRS_COUNT_LIMIT=3000 //update reserves limit count
 
 // Not necessary, slightly speeds up loading initialization when we know tokens are bad
 // Estimate gas will ensure we aren't submitting bad bundles, but bad tokens waste time
 const blacklistTokens = [
+//eth
   '0xD75EA151a61d06868E31F8988D28DFE5E9df57B4',
 //bsc
   '0x8076C74C5e3F5852037F31Ff0093Eeb8c8ADd8D3', //safemoon baged bsc
@@ -30,7 +32,19 @@ const blacklistTokens = [
   '0x6D949f9297A522c0f97C232CC209a67Bd7CfA471', //fee
   '0x066fc8DD5955534A01a9f892314c9B01b59A9C11', //fee
   '0x579F11C75Eb4e47F5290122e87CA411644aDCD97', //fee
-  '0x8076C74C5e3F5852037F31Ff0093Eeb8c8ADd8D3', //old safemoon/BUSD
+  '0xB09FE1613fE03E7361319d2a43eDc17422f36B09', //fee
+  '0x066fc8DD5955534A01a9f892314c9B01b59A9C11', //fee
+  '0x27Ae27110350B98d564b9A3eeD31bAeBc82d878d', //fee
+  '0x9a3077F34cC30F9BF8E93A0369119bae0113d9cC', //fee , POLY play
+  '0x8597ba143AC509189E89aaB3BA28d661A5dD9830', //fee VANCAT strange shit
+  '0xB1CeD2e320E3f4C8e3511B1DC59203303493F382', //fee
+  '0xcCe7F9eB881248E04f2975a3Fb3B62631ad9eE37', //fee
+  '0x8ad8e9B85787ddd0D31b32ECF655E93bfc0747eF', //fee
+  '0x1dEb45C74E0192D9272ADF54e9a7519C48C2bd81', //fee
+  '0xe0191fEfdd0D2B39b1a2E4E029cCDA8A481b7995', //fee
+  '0x73A14774b4E127180Ead92c03C3fA9C48d8Edfc7', //fee
+  '0x6A841724d230574be192eE5B0137e24ee2a505eD', //fee
+  '0xc7B15e17C95C6B31e5818E3c51ED8163D84d7Cbe', //fee
   '', //fee
 ]
 
@@ -42,6 +56,7 @@ interface GroupedMarkets {
 export class UniswappyV2EthPair extends EthMarket {
   static uniswapInterface = new Contract(WETH_ADDRESS, UNISWAP_PAIR_ABI);
   private _tokenBalances: TokenBalances
+  static update:boolean
 
   constructor(marketAddress: string, tokens: Array<string>, protocol: string) {
     super(marketAddress, tokens, protocol);
@@ -74,17 +89,17 @@ export class UniswappyV2EthPair extends EthMarket {
 	const rawPairs = JSON.parse(rawdata);
 	for (const pair of rawPairs){
 	    let tokenAddress: string;
-	    if (pair['pair0'] === WETH_ADDRESS) {
-		tokenAddress = pair[1]
-	    } else if (pair['pair1'] === WETH_ADDRESS) {
-		tokenAddress = pair[0]
+	    if (pair['p0'] === WETH_ADDRESS) {
+		tokenAddress = pair['p1']
+	    } else if (pair['p1'] === WETH_ADDRESS) {
+		tokenAddress = pair['p0']
 	    } else {
 		continue;
 	    }
 	    if (!blacklistTokens.includes(tokenAddress)) {
-		const uniswappyV2EthPair = new UniswappyV2EthPair(pair['market'], [pair['pair0'], pair['pair1']], pair['param']);
+		const uniswappyV2EthPair = new UniswappyV2EthPair(pair['m'], [pair['p0'], pair['p1']], pair['f']);
 		marketPairs.push(uniswappyV2EthPair);
-	    }
+	    }else {console.log("Blacklisted : %s",tokenAddress)}
 	}
 	return marketPairs
     }catch{console.log('Something wrong with reading  %s file. Rescaning .....',PAIRSFILENAME)}
@@ -99,7 +114,7 @@ export class UniswappyV2EthPair extends EthMarket {
       for (let i = 0; i < pairs.length; i++) {
         const pair = pairs[i];
         const marketAddress = pair[2];
-	const pairone={'market':marketAddress,'pair0':pair[0],'pair1':pair[1],'param':""}
+	const pairone={'m':marketAddress,'p0':pair[0],'p1':pair[1],'f':factoryAddress}
 	rawPair.push(pairone) //for cache .json
 //	console.log(marketAddress,  pairs.length-i)
         let tokenAddress: string;
@@ -115,9 +130,6 @@ export class UniswappyV2EthPair extends EthMarket {
         if (!blacklistTokens.includes(tokenAddress)) {
           const uniswappyV2EthPair = new UniswappyV2EthPair(marketAddress, [pair[0], pair[1]], "");
 	    marketPairs.push(uniswappyV2EthPair);
-	    const pairone={'market':marketAddress,'pair0':pair[0],'pair1':pair[1],'param':""}
-//	    rawPair.push(pairone)
-//	  console.log(pair[0],pair[1])
         }
       }
       if (pairs.length < UNISWAP_BATCH_SIZE) {
@@ -177,16 +189,28 @@ export class UniswappyV2EthPair extends EthMarket {
   }
 
   static async updateReserves2(provider: providers.JsonRpcProvider, allMarketPairs: Array<UniswappyV2EthPair>): Promise<void> {
+    this.update=true
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
     const pairAddresses = allMarketPairs.map(marketPair => marketPair.marketAddress);
     console.log("Updating markets, count:", pairAddresses.length)
-    const PAIRS_COUNT_LIMIT=3000
+//    const PAIRS_COUNT_LIMIT=3000
     let reserves: Array<Array<BigNumber>>=[[]]
     for (let b = 0; b < pairAddresses.length; b += PAIRS_COUNT_LIMIT){
 	console.log('Batch pairs: ',b)
 //	const estimate=await uniswapQuery.estimateGas.getReservesByPairs(pairAddresses.slice( b, (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length:b+PAIRS_COUNT_LIMIT) ))
 //	console.log('Estimate gas : ',estimate)
-	const reservesB: Array<Array<BigNumber>> = (await uniswapQuery.functions.getReservesByPairs(pairAddresses.slice( b, (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length:b+PAIRS_COUNT_LIMIT) )))[0];
+
+//	const reservesB: Array<Array<BigNumber>> = (await uniswapQuery.functions.getReservesByPairs(pairAddresses.slice( b, (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length:b+PAIRS_COUNT_LIMIT) )))[0];
+	let reservesB: Array<Array<BigNumber>>
+	try{
+	    reservesB = (await uniswapQuery.functions.getReservesByPairs(pairAddresses.slice( b, (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length:b+PAIRS_COUNT_LIMIT) )))[0];
+	}catch(e){
+	    console.log(e)
+	    console.log("reserves update fail. exit and rescan.")
+//	    this.update=false
+	    break;
+	}
+	
 	for (let i = 0; i < (pairAddresses.length-b < PAIRS_COUNT_LIMIT?pairAddresses.length-b:PAIRS_COUNT_LIMIT) ; i++) {
 	    const marketPair = allMarketPairs[i+b];
 	    const reserve = reservesB[i]
@@ -196,6 +220,7 @@ export class UniswappyV2EthPair extends EthMarket {
 	reserves.push(...reservesB)
 //    console.log("UpdatE SUCCESS")
     }
+    this.update=false
   }
 
   static async updateReserves(provider: providers.JsonRpcProvider, allMarketPairs: Array<UniswappyV2EthPair>): Promise<void> {
@@ -245,11 +270,13 @@ export class UniswappyV2EthPair extends EthMarket {
   getAmountIn(reserveIn: BigNumber, reserveOut: BigNumber, amountOut: BigNumber): BigNumber {
     const numerator: BigNumber = reserveIn.mul(amountOut).mul(1000);
     const denominator: BigNumber = reserveOut.sub(amountOut).mul(997);
+//    const denominator: BigNumber = reserveOut.sub(amountOut).mul(907);
     return numerator.div(denominator).add(1);
   }
 
   getAmountOut(reserveIn: BigNumber, reserveOut: BigNumber, amountIn: BigNumber): BigNumber {
     const amountInWithFee: BigNumber = amountIn.mul(997);
+//    const amountInWithFee: BigNumber = amountIn.mul(907);
     const numerator = amountInWithFee.mul(reserveOut);
     const denominator = reserveIn.mul(1000).add(amountInWithFee);
     return numerator.div(denominator);
@@ -285,7 +312,17 @@ export class UniswappyV2EthPair extends EthMarket {
     } else {
       throw new Error("Bad token input address")
     }
-    const populatedTransaction = await UniswappyV2EthPair.uniswapInterface.populateTransaction.swap(amount0Out, amount1Out, recipient, []);
+    let populatedTransaction
+//    console.log('protocol : %s',this.protocol)
+    if (this.protocol === "0x01bF7C66c6BD861915CdaaE475042d3c4BaE16A7"){ //bakery swap
+	console.log('Bakery special format')
+//	populatedTransaction = await UniswappyV2EthPair.uniswapInterface.populateTransaction.swap(amount0Out, amount1Out, recipient);
+//	console.log(populatedTransaction)
+	const data=await UniswappyV2EthPair.uniswapInterface.interface.encodeFunctionData("swap", [ amount0Out, amount1Out, recipient ])
+	return data
+    }else{
+	populatedTransaction = await UniswappyV2EthPair.uniswapInterface.populateTransaction.swap(amount0Out, amount1Out, recipient, []);
+    }
     if (populatedTransaction === undefined || populatedTransaction.data === undefined) throw new Error("HI")
     return populatedTransaction.data;
   }

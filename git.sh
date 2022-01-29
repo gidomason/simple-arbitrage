@@ -1,1 +1,5 @@
-/storage/share/hacks/git.sh
+#!/bin/bash
+
+git add -A
+git commit
+git push

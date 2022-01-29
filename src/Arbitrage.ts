@@ -6,13 +6,21 @@ import { EthMarket } from "./EthMarket";
 import { ETHER, bigNumberToDecimal } from "./utils";
 
 import * as fs from 'fs';
+import * as https from 'https';
 
 const logFileName='./log';
 const logFileNameBig='./logBig';
 var sizeForLog=0.1;
 var networkName='eth';
+const telegramChatId='-397664863'
+const botToken='1016166664:AAEqifDpxklu15PoDufdSMSvoliWjwcalLw'
+
+
+var executedTokens: string[]= [];
+
 
 const GWEI = BigNumber.from(10).pow(9)
+const ETH001 = BigNumber.from(10).pow(16) //0.01eth
 const PRIORITY_FEE = GWEI.mul(3)
 //const LEGACY_GAS_PRICE = GWEI.mul(12)
 const BLOCKS_IN_THE_FUTURE = 1
@@ -54,9 +62,13 @@ const TEST_VOLUMES = [
   ETHER.mul(500),
   ETHER.mul(750),
   ETHER.mul(1000),
+  ETHER.mul(2000),
+  ETHER.mul(3000),
+  ETHER.mul(5000)
 ]
 
-const flashloanFeePercentage = 9 // (0.09%) or 9/10000
+//const flashloanFeePercentage = 9 // (0.09%) or 9/10000
+const flashloanFeePercentage = 0 // DODO has 0%
 export function getBestCrossedMarket(crossedMarkets: Array<EthMarket>[], tokenAddress: string): CrossedMarketDetails | undefined {
   let bestCrossedMarket: CrossedMarketDetails | undefined = undefined;
   for (const crossedMarket of crossedMarkets) {
@@ -107,12 +119,27 @@ export class Arbitrage {
     this.bundleExecutorContract = bundleExecutorContract;
     networkName = 'eth';
 //    console.log(flashbotsProvider);
+//    console.log(executorWallet);
 //    console.log(bundleExecutorContract.provider);
 //    console.log(bundleExecutorContract.provider);
 //    const { chainId } = bundleExecutorContract.provider.getNetwork();
 //    bundleExecutorContract.provider.getNetwork().then(console.log);
+//    console.log(this.bundleExecutorContract)
     
-    bundleExecutorContract.provider.getNetwork().then((val) => {console.log(val);networkName=val.name });
+    bundleExecutorContract.provider.getNetwork().then((val) => {
+	console.log(val);networkName=val.name 
+	if (val.name === 'bnb'){
+	    const abi = [ "function flashloan(address loanToken, uint256 loanAmount, bytes memory _params, address flashLoanPool)",]
+//	    this.bundleExecutorContract=new Contract(this.bundleExecutorContract.address, abi, bundleExecutorContract.provider)
+	    this.bundleExecutorContract=new Contract(this.bundleExecutorContract.address, abi,  this.executorWallet)
+//		const executorSigned=this.bundleExecutorContract.connect( this.executorWallet )
+//	    this.bundleExecutorContract=new Contract(this.bundleExecutorContract.address, abi, this.executorWallet)
+//	    this.executorWallet=new Wallet(this.bundleExecutorContract.address,bundleExecutorContract.provider)
+//	    console.log(this.bundleExecutorContract);
+//	    console.log(this.executorWallet);
+	    console.log("Executor conract for BSC attached at %s",this.bundleExecutorContract.address)
+	}
+    });
     console.log(networkName);
 //{ name: 'bnb', chainId: 56, ensAddress: null, _defaultProvider: null }
 //    console.log("Network chain id : ",chainId);
@@ -130,18 +157,19 @@ export class Arbitrage {
       `\n`
 
     console.log(txtMessage)
-    
+//    const block = this.bundleExecutorContract.provider.getBlock(blockNumber)    
+    const block=0
     const timeStr = new Date().toLocaleString(undefined, {year: 'numeric', month: '2-digit', day: '2-digit', weekday:"long", hour: '2-digit', hour12: false, minute:'2-digit', second:'2-digit'})
-    fs.writeFile(logFileName+networkName+'.txt', "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
+    fs.writeFile(logFileName+networkName+'.txt', "\n"+timeStr+' '+block+' '+txtMessage,  { flag: 'a+' } , function (err) {
 	if (err) return console.log(err);
-	console.log('Catch normal >> log.file');
+//	console.log('Catch normal >> log.file');
     })
-    console.log(networkName);
-    if (networkName === 'bnb') sizeForLog=10;
+//    console.log(networkName);
+//    if (networkName === 'bnb') sizeForLog=0.1;
     if (bigNumberToDecimal(crossedMarket.profit)>sizeForLog){
-	fs.writeFile(logFileNameBig+networkName+'.txt', "\n"+timeStr+' '+txtMessage,  { flag: 'a+' } , function (err) {
+	fs.writeFile(logFileNameBig+networkName+'.txt', "\n"+timeStr+' '+block+' '+txtMessage,  { flag: 'a+' } , function (err) {
 	    if (err) return console.log(err);
-	    console.log('Catch big >> log.file');
+//	    console.log('Catch big >> log.file');
 	})
     }
 
@@ -152,6 +180,7 @@ export class Arbitrage {
     const bestCrossedMarkets = new Array<CrossedMarketDetails>()
 
     for (const tokenAddress in marketsByToken) {
+	if (executedTokens.includes(tokenAddress)) {console.log('disabled token : %s',tokenAddress);continue}
       const markets = marketsByToken[tokenAddress]
       const pricedMarkets = _.map(markets, (ethMarket: EthMarket) => {
         return {
@@ -182,81 +211,25 @@ export class Arbitrage {
   // TODO: take more than 1
   async takeCrossedMarkets(bestCrossedMarkets: CrossedMarketDetails[], blockNumber: number, minerRewardPercentage: number): Promise<void> {
     for (const bestCrossedMarket of bestCrossedMarkets) {
-
+//	executedTokens.push(bestCrossedMarket.tokenAddress)
 //      console.log(this.bundleExecutorContract.provider)
       const block = await this.bundleExecutorContract.provider.getBlock(blockNumber)
 //      console.log(block)
 //      console.log(block.baseFee)
 	let feeData = await this.bundleExecutorContract.provider.getFeeData();
-	console.log("Fee Data:", feeData);
+//	console.log("Fee Data:", feeData);
+	const maxBaseFeeInFutureBlock=1;
+/*
       const maxBaseFeeInFutureBlock = FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(BigNumber.from(block.baseFeePerGas), BLOCKS_IN_THE_FUTURE)
       console.log('maxBaseFeeInFutureBlock :',maxBaseFeeInFutureBlock)
-/*
-
-  hash: '0xa781f40d605d27b165caa3ad46c76a1036f168c87e866a9c33e6213d98756487',
-  parentHash: '0x69959f9f63607150a7956b89d1613021309432005c74b6f130352b442b329091',
-  number: 14055228,
-  timestamp: 1642851859,
-  nonce: '0xaba12aeb8493d24d',
-  difficulty: null,
-  gasLimit: BigNumber { _hex: '0x01ca35b5', _isBigNumber: true },
-  gasUsed: BigNumber { _hex: '0x01ca2dc7', _isBigNumber: true },
-  miner: '0xab3B229eB4BcFF881275E7EA2F0FD24eeaC8C83a',
-  extraData: '0x706f6f6c696e2e636f6d1f45675f3ff5a09649',
-  transactions: [
-
-      if (block.baseFeePerGas == null) {
-	console.warn('This chain is not EIP-1559 enabled')
-      }else{
-	console.warn('This chain is EIP-1559 enabled. Need fix!')
-      }
-
-  const legacyTransaction = {
-    to: wallet.address,
-    gasPrice: LEGACY_GAS_PRICE,
-    gasLimit: 21000,
-    data: '0x',
-    nonce: await provider.getTransactionCount(wallet.address)
-  }
-
-    const block = await provider.getBlock(blockNumber)
-
-    let eip1559Transaction: TransactionRequest
-
-    if (block.baseFeePerGas == null) {
-      console.warn('This chain is not EIP-1559 enabled, defaulting to two legacy transactions for demo')
-      eip1559Transaction = { ...legacyTransaction }
-      // We set a nonce in legacyTransaction above to limit validity to a single landed bundle. Delete that nonce for tx#2, and allow bundle provider to calculate it
-      delete eip1559Transaction.nonce
-    } else {
-      const maxBaseFeeInFutureBlock = FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(block.baseFeePerGas, BLOCKS_IN_THE_FUTURE)
-      eip1559Transaction = {
-        to: wallet.address,
-        type: 2,
-        maxFeePerGas: PRIORITY_FEE.add(maxBaseFeeInFutureBlock),
-        maxPriorityFeePerGas: PRIORITY_FEE,
-        gasLimit: 21000,
-        data: '0x',
-        chainId: CHAIN_ID
-      }
-    }
-
-    const signedTransactions = await flashbotsProvider.signBundle([
-      {
-        signer: wallet,
-        transaction: legacyTransaction
-      },
-      {
-        signer: wallet,
-        transaction: eip1559Transaction
-      },
-    ])
-
 */
-
+//		const executorSigned=this.bundleExecutorContract.connect( this.executorWallet )
       const buyCalls = await bestCrossedMarket.buyFromMarket.sellTokensToNextMarket(WETH_ADDRESS, bestCrossedMarket.volume, bestCrossedMarket.sellToMarket);
+//      const buyCalls = await bestCrossedMarket.buyFromMarket.sellTokensToNextMarket(WETH_ADDRESS, bestCrossedMarket.volume.mul(989).div(1000), bestCrossedMarket.sellToMarket);
+//      const inter = bestCrossedMarket.buyFromMarket.getTokensOut(WETH_ADDRESS, bestCrossedMarket.tokenAddress, bestCrossedMarket.volume).mul(989).div(1000)
       const inter = bestCrossedMarket.buyFromMarket.getTokensOut(WETH_ADDRESS, bestCrossedMarket.tokenAddress, bestCrossedMarket.volume)
       const sellCallData = await bestCrossedMarket.sellToMarket.sellTokens(bestCrossedMarket.tokenAddress, inter, this.bundleExecutorContract.address);
+//      const sellCallData = await bestCrossedMarket.sellToMarket.sellTokens(bestCrossedMarket.tokenAddress, inter, '0xFE0Ef5a9B7cA4FB1a327f48771cA9b4725063A64'); //for debug via hardhat forking
 
       const targets: Array<string> = [...buyCalls.targets, bestCrossedMarket.sellToMarket.marketAddress]
       const payloads: Array<string> = [...buyCalls.data, sellCallData]
@@ -271,9 +244,117 @@ export class Arbitrage {
       
           const ethersAbiCoder = new utils.AbiCoder()
           const typeParams = ['uint256', 'address[]', 'bytes[]']
-          const inputParams = [minerReward.toString(), targets, payloads]
+//          const inputParams = [minerReward.toString(), targets, payloads]
+          const inputParams = [BigNumber.from(0), targets, payloads]
           const params = ethersAbiCoder.encode(typeParams, inputParams)
-          console.log({targets, payloads})
+//          console.log(bestCrossedMarket.volume,{targets, payloads})
+	  const txtMessage=`Token : ${bestCrossedMarket.tokenAddress} profit : ${utils.formatEther(bestCrossedMarket.profit)} block : ${blockNumber}
+const vol = '${bestCrossedMarket.volume}'
+const targets=['${targets[0]}','${targets[1]}']
+const payloads=['${payloads[0]}','${payloads[1]}'] `
+	fs.writeFile(logFileName+networkName+'.txt', "\n "+txtMessage,  { flag: 'a+' } , function (err) {
+	    if (err) return console.log(err);
+	})
+	console.log(txtMessage)
+//	continue
+//	console.log('Profit : %s , ETH001 : %s , diff : %s',bestCrossedMarket.profit,ETH001,bestCrossedMarket.profit.sub(ETH001.mul(2)))
+	if (networkName === 'bnb' && bestCrossedMarket.profit.gt(ETH001.mul(1))){ // profit > 0.01
+//	if (networkName === 'bnb' && bestCrossedMarket.profit.gt(ETH001.mul(2))){ // profit > 0.02
+//	if (networkName === 'bnb' && bestCrossedMarket.profit.gt(ETH001.mul(100*100))){ // profit > 0.02
+	    const flashLoanPool='0xD534fAE679f7F02364D177E9D44F1D15963c0Dd7' //WBNB 2.4k
+//	    const flashLoanPool='0x3a8d3df3bdf9058da633cd86f68361779d3f6546' //USDT 140k
+//	    const flashLoanPool='0x018e41228b1ebc2f81897150877edbb682272c64' //USDC 3mio
+//	    const flashLoanPool='0xb19265426ce5bc1e015c0c503dfe6ef7c407a406' //BUSD 160k
+	    try{
+//		const executorSigned=this.bundleExecutorContract.connect( this.executorWallet )
+		let estimation
+		const url=`https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${telegramChatId}&text=${txtMessage}`;
+/*
+		https.get(url).on("error", (err) => {
+		    console.log("Error: " + err.message);
+		});
+*/
+		try{
+		    estimation = await this.bundleExecutorContract.estimateGas.flashloan(WETH_ADDRESS, bestCrossedMarket.volume, params,flashLoanPool)
+		    console.log(' gas estimation : %s , try push',estimation)
+		    const url=`https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${telegramChatId}&text=${txtMessage+'PROLEZLO!'}`;
+		    https.get(url).on("error", (err) => { console.log("Error: " + err.message); });
+		}catch(e){
+    // error.reason - The Revert reason; this is what you probably care about. :)
+    // Additionally:
+    // - error.address - the contract address
+    // - error.args - [ BigNumber(1), BigNumber(2), BigNumber(3) ] in this case
+    // - error.method - "someMethod()" in this case
+    // - error.errorSignature - "Error(string)" (the EIP 838 sighash; supports future custom errors)
+    // - error.errorArgs - The arguments passed into the error (more relevant post EIP 838 custom errors)
+    // - error.transaction - The call transaction used
+//		    console.log(e.message)
+		    console.log(e.reason)
+		    console.log(e.code)
+//		    console.log(e.error)
+//		    console.log(e.error.body)
+		    console.log(JSON.parse(e.error.body).error.message)
+//		    console.log(Object.keys(e))
+//    body: '{"jsonrpc":"2.0","id":55,"error":{"code":3,"message":"execution reverted: payload operation failed",}'
+//		    console.log(e['body'])
+		    const msg='token : '+bestCrossedMarket.tokenAddress+' ; '+e.code+' ; '+e.reason+' ; '+JSON.parse(e.error.body).error.message
+		    fs.writeFile(logFileName+networkName+'.txt', "\n "+msg,  { flag: 'a+' } , function (err) {
+			if (err) return console.log(err);
+		    })
+		    const url=`https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${telegramChatId}&text=${'error : '+msg}`;
+		    https.get(url).on("error", (err) => { console.log("Error: " + msg);	});
+		    console.log('No estimation -- transaction bad , dont post')
+//		    return
+		    continue
+		}
+//		const gasPrice=GWEI.mul(5)
+//		const gasLimit=BigNumber.from(500000)
+//		const tx = await executorSigned.flashloan(WETH_ADDRESS, bestCrossedMarket.volume, params,'0xD534fAE679f7F02364D177E9D44F1D15963c0Dd7',{gasPrice: gasPrice, gasLimit: gasLimit})
+
+//		continue
+		const tx = await this.bundleExecutorContract.flashloan(WETH_ADDRESS, bestCrossedMarket.volume, params,flashLoanPool)
+		console.log("Transaction hash is ", tx.hash);
+		let receipt = await tx.wait()
+
+		//const receipt = provider.waitForTransaction(tx.hash, 1, 150000).then(() => {//});
+/*
+  receipt: {
+    to: '0xACF8f46C294cEa457bB3ab34bC882d2C40Ddd3E9',
+    from: '0xF180a1cf80605674cDCA01ce106Ae19eA8876905',
+    contractAddress: null,
+    transactionIndex: 66,
+    gasUsed: BigNumber { _hex: '0x0559c7', _isBigNumber: true },
+    logsBloom: '0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+    blockHash: '0x9a3b30474d22b118df716ee08d63ec121796f9c345689363ed9f02e796f4483c',
+    transactionHash: '0x339e318ce5dc6d119fd423d5d26f5bd63da4fab1e14e3c606e05574b1e617c89',
+    logs: [],
+    blockNumber: 14754488,
+    confirmations: 1,
+    cumulativeGasUsed: BigNumber { _hex: '0x7f430a', _isBigNumber: true },
+    status: 0,
+    type: 0,
+    byzantium: true
+  }
+*/
+//		console.log(receipt)
+		if (receipt.status){
+		    console.log('!!! transaction complete for token %s',bestCrossedMarket.tokenAddress)
+		}else{
+		    console.log(' Error : transaction reverted %s',bestCrossedMarket.tokenAddress)
+		}
+		
+//<------>'0xD534fAE679f7F02364D177E9D44F1D15963c0Dd7', //2400 WBNB pool
+	    }catch(e){
+		console.log(e)
+		console.log('BSC flashloan fail. need manual inspect. token %s blacklisted',bestCrossedMarket.tokenAddress)
+//		executedTokens.push(bestCrossedMarket.tokenAddress)
+	    }
+	}
+	else{
+	    console.log('Profit too small, skip')
+//	    executedTokens.push(bestCrossedMarket.tokenAddress)
+	}
+	continue
         
           if (profitMinusFeeMinusMinerReward.gt(0)){
   
@@ -301,10 +382,8 @@ export class Arbitrage {
             } catch (e) {
               console.warn(`Estimate gas failure for ${JSON.stringify(bestCrossedMarket)}`)
 //	      console.warn(e)
-//	      process.exit(0) //debug
               continue
             }
-//	    process.exit(0) // debug
 /*
             const bundlePromises = _.map([blockNumber + 1, blockNumber + 2], targetBlockNumber =>
               this.flashbotsProvider.sendBundle(
