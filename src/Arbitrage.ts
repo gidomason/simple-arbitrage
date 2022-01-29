@@ -12,8 +12,8 @@ const logFileName='./log';
 const logFileNameBig='./logBig';
 var sizeForLog=0.1;
 var networkName='eth';
-const telegramChatId='-397664863'
-const botToken='1016166664:AAEqifDpxklu15PoDufdSMSvoliWjwcalLw'
+const telegramChatId='*'
+const botToken='*'
 
 
 var executedTokens: string[]= [];
